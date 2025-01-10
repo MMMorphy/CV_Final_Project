@@ -20,23 +20,22 @@ def lapstyle_transfer_train(lossnet, input_image, style_grams, content_features,
         features = lossnet(input_image)
         grams = [utils.gram_matrix(x) for x in features]
         # 接下来分别计算损失误差
-        content_loss = F.mse_loss(features[0], content_features[0]) * config.content_weight # 这是内容误差
+        content_loss = F.mse_loss(features[0], content_features[0]) # 这是内容误差
         style_loss = 0
-        for a, b in zip(grams, style_grams):
-            style_loss += F.mse_loss(a, b) * config.style_weight # 这是风格损失
+        for a, b in zip(grams[1:], style_grams[1:]):
+            style_loss += F.mse_loss(a, b, reduction='sum') # 这是风格损失
         laplacian_loss = 0
         for gamma, p, cl in zip(config.laplacian_weight, config.laplacian_pool_size, content_laplacian):
-            laplacian_loss += F.mse_loss(cl, utils.laplacian(input_image, p)) * gamma
+            laplacian_loss += F.mse_loss(cl, utils.laplacian(input_image, p), reduction='sum') * gamma
 
-        loss = content_loss + style_loss + laplacian_loss
+        loss = content_loss * config.content_weight + style_loss * config.style_weight + laplacian_loss
         loss.backward()
         optimizer.step()
 
         if (t + 1) % 500 == 0:
-            print(f'Step {t + 1}: Total Loss: {loss.item():.8f} - Style Loss: {style_loss.item():.8f} - Content Loss: {content_loss.item():.8f} \
-                  - Laplacian Loss: {laplacian_loss.item():.8f}')
+            print(f'Step {t + 1}: Total Loss: {loss.item():.8f} - Style Loss: {style_loss.item():.8f} - Content Loss: {content_loss.item():.8f} - Laplacian Loss: {laplacian_loss.item():.8f}')
 
-VGG19 = torchvision.models.vgg19(weights=VGG19_Weights.IMAGENET1K_V1)
+VGG19 = torchvision.models.vgg19(weights=VGG19_Weights.DEFAULT)
 lossnet = utils.LossNet(VGG19).to('cuda:0').eval()
 
 img0 = Image.open(config.style_image).resize(config.image_size)
@@ -63,7 +62,7 @@ elif config.optimizer == 'lbfgs':
 else:
     raise ValueError('Just Adam or L-BFGS')
 
-lapstyle_transfer_train(lossnet, input_img, style_grams, content_features, content_laplacian, optimizer)
+lapstyle_transfer_train(lossnet, input_img, style_grams, content_features, content_laplacian, optimizer, 10000)
 
 result = input_img.data.squeeze(dim=0).permute(1, 2, 0)
 result = result.cpu().numpy()  # 转换为 NumPy 数组
@@ -77,6 +76,6 @@ ax[0].set_title('Content Image', fontsize=15)
 ax[1].imshow(np.array(img1) / 255.)
 ax[1].set_title('Style Image', fontsize=15)
 ax[2].imshow(result)
-ax[2].set_title('Transferred Image', fontsize=15)
+ax[2].set_title('Stylized Image', fontsize=15)
 plt.show()
-plt.savefig('./experiments/lapstyle_pku_vangogh.png')
+plt.imsave(config.output_path, result)
