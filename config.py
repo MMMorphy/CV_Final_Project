@@ -13,4 +13,4 @@ prototxt_path = './models/VGG_ILSVRC_19_layers_deploy.prototxt'
 weight_path = './models/VGG_ILSVRC_19_layers.caffemodel'
 
 optimizer = 'adam' # 还可以填 lbfgs
-lr = 0.001
+lr = 0.0001
