@@ -78,4 +78,5 @@ ax[1].set_title('Style Image', fontsize=15)
 ax[2].imshow(result)
 ax[2].set_title('Stylized Image', fontsize=15)
 plt.show()
-plt.imsave(config.output_path, result)
+if config.save:
+    plt.imsave(config.output_path, result)

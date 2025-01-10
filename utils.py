@@ -33,15 +33,15 @@ class LossNet(nn.Module):
 
 def laplacian(x, p: int):
     # 注意！！这个函数包括了池化
-    x = F.avg_pool2d(x, kernel_size=p, stride=p)
+    x_down = F.avg_pool2d(x, kernel_size=p, stride=p)
 
-    b, ch, h, w = x.size()
+    b, ch, h, w = x_down.size()
     lap_kernel = torch.tensor([[0, -1, 0],
                                [-1, 4, -1],
                                [0, -1, 0]], dtype=torch.float32).cuda()
     lap_kernel = lap_kernel.unsqueeze(0).unsqueeze(0)
     lap_kernel = lap_kernel.expand(ch, ch, -1, -1)
-    res = F.conv2d(x, lap_kernel, padding=1)
+    res = F.conv2d(x_down, lap_kernel, padding=1)
     res = torch.sum(res, dim=1)
     
     return res
