@@ -2,6 +2,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from PIL import Image
+from torch.autograd import Variable
+from torchvision import transforms
 
 def gram_matrix(x):
     (b, ch, h, w) = x.size()
@@ -45,3 +48,22 @@ def laplacian(x, p: int):
     res = torch.sum(res, dim=1)
     
     return res
+
+# opens and returns image file as a PIL image (0-255)
+def load_image(filename):
+    img = Image.open(filename)
+    return img
+
+# assumes data comes in batch form (ch, h, w)
+def save_image(filename, data):
+    std = np.array([0.229, 0.224, 0.225]).reshape((3, 1, 1))
+    mean = np.array([0.485, 0.456, 0.406]).reshape((3, 1, 1))
+    img = data.clone().numpy()
+    img = ((img * std + mean).transpose(1, 2, 0)*255.0).clip(0, 255).astype("uint8")
+    img = Image.fromarray(img)
+    img.save(filename)
+    
+# using ImageNet values
+def normalize_tensor_transform():
+    return transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225])
