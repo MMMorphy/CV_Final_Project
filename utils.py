@@ -5,6 +5,8 @@ import torch.nn.functional as F
 from PIL import Image
 from torch.autograd import Variable
 from torchvision import transforms
+from torch.utils.data import Dataset
+import os
 
 def gram_matrix(x):
     (b, ch, h, w) = x.size()
@@ -51,7 +53,7 @@ def laplacian(x, p: int):
 
 # opens and returns image file as a PIL image (0-255)
 def load_image(filename):
-    img = Image.open(filename)
+    img = Image.open(filename).convert('RGB')
     return img
 
 # assumes data comes in batch form (ch, h, w)
@@ -67,3 +69,75 @@ def save_image(filename, data):
 def normalize_tensor_transform():
     return transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225])
+
+class ResidualBlock(nn.Module):
+    def __init__(self, channels):
+        super(ResidualBlock, self).__init__()
+        self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, stride=1, padding=0)
+        self.relu = nn.ReLU()
+        self.conv2 = nn.Conv2d(channels, channels, kernel_size=3, stride=1, padding=0)
+        self.bn1 = nn.BatchNorm2d(channels)
+        self.bn2 = nn.BatchNorm2d(channels)
+        
+    def forward(self, x):
+        out = self.relu(self.bn1(self.conv1(x)))
+        out = self.relu(self.bn2(self.conv2(out)))
+        return out
+    
+class ImageTransformNet(nn.Module):
+    def __init__(self):
+        super(ImageTransformNet, self).__init__()
+        self.padding = nn.ReflectionPad2d(40)
+        self.conv1 = nn.Conv2d(3, 32, kernel_size=9, stride=1, padding=4)
+        self.relu1 = nn.ReLU()
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1)
+        self.relu2 = nn.ReLU()
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1)
+        self.relu3 = nn.ReLU()
+        
+        self.residual_blocks = nn.Sequential(
+            ResidualBlock(128),
+            ResidualBlock(128),
+            ResidualBlock(128),
+            ResidualBlock(128),
+            ResidualBlock(128)
+        )
+        
+        self.deconv1 = nn.ConvTranspose2d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1)
+        self.relu4 = nn.ReLU()
+        self.deconv2 = nn.ConvTranspose2d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1)
+        self.relu5 = nn.ReLU()
+        self.deconv3 = nn.Conv2d(32, 3, kernel_size=9, stride=1, padding=4)
+        self.tanh = nn.Tanh()
+        
+    def forward(self, x):
+        x = self.padding(x)
+        x = self.relu1(self.conv1(x))
+        x = self.relu2(self.conv2(x))
+        x = self.relu3(self.conv3(x))
+        x = self.residual_blocks(x)
+        x = self.relu4(self.deconv1(x))
+        x = self.relu5(self.deconv2(x))
+        x = self.tanh(self.deconv3(x))
+        return x
+    
+class CustomImageDataset(Dataset):
+    def __init__(self, root, transform=None):
+        self.root = root
+        self.transform = transform
+        # 获取所有图像文件的路径
+        self.image_paths = [
+            os.path.join(root, fname) 
+            for fname in os.listdir(root) 
+            if fname.endswith(('jpg', 'png'))
+        ]
+
+    def __len__(self):
+        return len(self.image_paths)
+
+    def __getitem__(self, idx):
+        image_path = self.image_paths[idx]
+        image = Image.open(image_path).convert('RGB')  # 确保图像是 RGB 格式
+        if self.transform:
+            image = self.transform(image)
+        return image
