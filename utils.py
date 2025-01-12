@@ -19,10 +19,10 @@ class LossNet(nn.Module):
     def __init__(self, backbone): # 默认我们要用VGG19
         super(LossNet, self).__init__()
         # 选择内容层和风格层的索引
-        # 内容层：conv4_2 --- 21层
-        # 风格层：conv1_1, conv2_1, conv3_1, conv4_1, conv5_1 --- 0, 5, 10, 19, 28层
+        # 内容层：conv4_2 --- 12层
+        # 风格层：conv1_1, conv2_1, conv3_1, conv4_1, conv5_1 --- 0, 3, 6, 11, 16层
         # 内容层放在输出的第0个，风格层使用索引[1:]即可
-        self.select = ['21', '0', '5', '10', '19', '28']
+        self.select = ['12', '0', '3', '6', '11', '16']
         self.feature_detector = backbone.features
         # 冻结参数
         for p in self.parameters():

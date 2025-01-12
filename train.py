@@ -97,6 +97,7 @@ def train(style_image, dataset, visualize):
             y_c_features = loss_net(x)
             y_c_laplacian = [utils.laplacian(x, p) for p in config.laplacian_pool_size]
 
+            # 计算输出图片的“特征”和gram矩阵和laplacian
             y_hat_features = loss_net(y_hat)
             y_hat_gram = [utils.gram_matrix(fmap) for fmap in y_hat_features]
             y_hat_laplacian = [utils.laplacian(y_hat, p) for p in config.laplacian_pool_size]
