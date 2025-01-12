@@ -91,7 +91,7 @@ def closure():
 
 if config.optimizer == 'adam':
     optimizer = optim.Adam([input_img], lr=config.lr)
-    lapstyle_transfer_train(lossnet, input_img, style_grams, content_features, content_laplacian, optimizer, 20000)
+    lapstyle_transfer_train(lossnet, input_img, style_grams, content_features, content_laplacian, optimizer, config.max_T)
 elif config.optimizer == 'lbfgs':
     optimizer = optim.LBFGS([input_img], lr=config.lr)
     closure.counter = 0  # 初始化计数器

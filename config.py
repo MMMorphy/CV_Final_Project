@@ -17,6 +17,7 @@ weight_path = './models/VGG_ILSVRC_19_layers.caffemodel'
 
 optimizer = 'adam' # 还可以填 lbfgs
 lr = 0.0001
+max_T = 20000
 BATCH_SIZE = 4
 EPOCH = 10
 visualize = True
