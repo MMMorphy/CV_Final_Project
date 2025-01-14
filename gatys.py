@@ -1,108 +1,124 @@
+import os
+import sys
+script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+os.chdir(script_dir)
+
 import torch
-import numpy as np
-from PIL import Image
-import matplotlib.pyplot as plt
-import torchvision
 import torch.nn.functional as F
 import torch.optim as optim
+import numpy as np
+from PIL import Image
+import torchvision
+from torchvision.models import VGG19_Weights
+import matplotlib.pyplot as plt
+import config
+import utils
 
-# Load images
-img0 = Image.open('./style.png').resize([224, 224])
-style_img = torch.Tensor(np.array(img0) / 255.)
-style_img = style_img.permute(2, 0, 1).unsqueeze(dim=0)
-style_img = style_img[:, :3, :, :]
-
-img1 = Image.open('./pku.png').resize([224, 224])
-content_img = torch.Tensor(np.array(img1) / 255.)
-content_img = content_img.permute(2, 0, 1).unsqueeze(dim=0)
-content_img = content_img[:, :3, :, :]
-
-# Define the LossNet class
-class LossNet(torch.nn.Module):
-    def __init__(self, backbone):
-        super(LossNet, self).__init__()
-        self.select = ['3', '8', '15', '22']  # Layers to extract features from
-        self.feature_detector = backbone.features
-        for p in self.parameters():
-            p.requires_grad = False
-        
-    def forward(self, x):
-        features = []
-        for name, layer in self.feature_detector._modules.items():
-            x = layer(x)
-            if name in self.select:
-                features.append(x)
-        return features
-
-# Load VGG16 model
-vgg16 = torchvision.models.vgg16(pretrained=True)
-lossnet = LossNet(vgg16).to('cuda:0').eval()
-
-# Extract features from content image
-content_features = lossnet(content_img.cuda())
-print(len(content_features))
-print(content_features[0].shape)
-
-# Function to compute Gram matrix
-def gram_matrix(x):
-    (b, ch, h, w) = x.size()
-    features = x.view(b, ch, w * h)
-    features_t = features.transpose(1, 2)
-    gram = features.bmm(features_t) / (ch * h * w)
-    return gram
-
-# Extract features from style image and compute Gram matrix
-style_features = lossnet(style_img.cuda())
-style_grams = [gram_matrix(x) for x in style_features]
-print(len(style_features))
-print(style_features[0].shape)
-print(len(style_grams))
-print(style_grams[0].shape)
-
-# Style transfer training function
-def style_transfer_train(model, input_img, style_grams, content_features, optimizer, max_T=1000):
-    style_weight = 1e7
-    content_weight = 1
-
+def lapstyle_transfer_train(lossnet, input_image, style_grams, content_features, content_laplacian, optimizer, max_T=1000):
     for t in range(max_T):
         optimizer.zero_grad()
-        features = model(input_img)
-        grams = [gram_matrix(x) for x in features]
-
-        content_loss = F.mse_loss(features[2], content_features[2]) * content_weight
+        features = lossnet(input_image)
+        grams = [utils.gram_matrix(x) for x in features]
+        # 接下来分别计算损失误差
+        content_loss = F.mse_loss(features[0], content_features[0]) # 这是内容误差
         style_loss = 0
-        for a, b in zip(grams, style_grams):
-            style_loss += F.mse_loss(a, b) * style_weight
+        for a, b in zip(grams[1:], style_grams[1:]):
+            style_loss += F.mse_loss(a, b, reduction='sum') # 这是风格损失
+        laplacian_loss = 0
+        for gamma, p, cl in zip(config.laplacian_weight, config.laplacian_pool_size, content_laplacian):
+            laplacian_loss += F.mse_loss(cl, utils.laplacian(input_image, p), reduction='sum')
 
-        loss = style_loss + content_loss
+        loss = content_loss * config.content_weight + style_loss * config.style_weight + laplacian_loss * config.laplacian_weight[0]
         loss.backward()
         optimizer.step()
 
         if (t + 1) % 500 == 0:
-            print(f'Step {t + 1}: Total Loss: {loss.item():.8f} - Style Loss: {style_loss.item():.8f} - Content Loss: {content_loss.item():.8f}')
+            print(f'Step {t + 1}: Total Loss: {loss.item():.8f} - Style Loss: {style_loss.item():.8f} - Content Loss: {content_loss.item():.8f} - Laplacian Loss: {laplacian_loss.item():.8f}')
+            #with open(f'content_{config.laplacian_weight[0]}.txt', 'a', encoding='utf-8') as file:
+             #   file.write(f'{content_loss.item():.8f}\n')
+            #with open(f'style_{config.laplacian_weight[0]}.txt', 'a', encoding='utf-8') as file:
+             #   file.write(f'{style_loss.item():.8f}\n')
+            #with open(f'laplacian_{config.laplacian_weight[0]}.txt', 'a', encoding='utf-8') as file:
+             #   file.write(f'{laplacian_loss.item():.8f}\n')
 
-# Set up optimizer
+VGG19 = torchvision.models.vgg19(weights=VGG19_Weights.DEFAULT)
+lossnet = utils.LossNet(VGG19).to('cuda:0').eval()
+
+img0 = Image.open(config.style_image).resize(config.image_size)
+style_img = torch.Tensor(np.array(img0) / 255.).cuda()
+style_img = style_img.permute(2, 0, 1).unsqueeze(dim=0)
+style_img = style_img[:, :3, :, :]
+
+img1 = Image.open(config.content_image)
+content_img = torch.Tensor(np.array(img1.resize(config.image_size)) / 255.).cuda()
+content_img = content_img.permute(2, 0, 1).unsqueeze(dim=0)
+content_img = content_img[:, :3, :, :]
+
+content_features = lossnet(content_img)
+style_features = lossnet(style_img)
+style_grams = [utils.gram_matrix(x) for x in style_features]
+content_laplacian = [utils.laplacian(content_img, p) for p in config.laplacian_pool_size]
+
 input_img = content_img.clone().cuda()
 input_img.requires_grad = True
-optimizer = optim.Adam([input_img], lr=0.001)
 
-# Train the model
-style_transfer_train(lossnet, input_img, style_grams, content_features, optimizer, max_T=10000)
 
-# Convert result to a displayable format
+# 定义闭包函数
+def closure():
+    optimizer.zero_grad()  # 清空梯度
+    input_img_cont = input_img.contiguous()
+    features = lossnet(input_img_cont)  # 计算特征
+    grams = [utils.gram_matrix(x) for x in features]
+
+    # 计算内容损失
+    content_loss = F.mse_loss(features[0], content_features[0])
+
+    # 计算风格损失
+    style_loss = sum(F.mse_loss(a, b) for a, b in zip(grams[1:], style_grams[1:]))
+
+    # 计算拉普拉斯损失
+    laplacian_loss = sum(
+        F.mse_loss(cl, utils.laplacian(input_img_cont, p)) * gamma
+        for gamma, p, cl in zip(config.laplacian_weight, config.laplacian_pool_size, content_laplacian)
+    )
+
+    # 总损失
+    loss = config.content_weight * content_loss + config.style_weight * style_loss
+    loss.backward()  # 反向传播计算梯度
+
+    # 打印损失信息
+    if closure.counter % 500 == 0:
+        print(f'Step {closure.counter}: Total Loss: {loss.item():.8f} - Style Loss: {style_loss.item():.8f} - Content Loss: {content_loss.item():.8f} - Laplacian Loss: {laplacian_loss.item():.8f}')
+    
+    closure.counter += 1
+    return loss
+
+if config.optimizer == 'adam':
+    optimizer = optim.Adam([input_img], lr=config.lr)
+    lapstyle_transfer_train(lossnet, input_img, style_grams, content_features, content_laplacian, optimizer, config.max_T)
+elif config.optimizer == 'lbfgs':
+    optimizer = optim.LBFGS([input_img], lr=config.lr)
+    closure.counter = 0  # 初始化计数器
+    max_iterations = 1000
+    for step in range(max_iterations):
+        input_img = input_img.contiguous().float()
+        optimizer.step(closure)
+else:
+    raise ValueError('Just Adam or L-BFGS')
+
 result = input_img.data.squeeze(dim=0).permute(1, 2, 0)
 result = result.cpu().numpy()  # 转换为 NumPy 数组
 result = np.clip(result, 0, 1)  # 限制在 [0, 1] 之间
 
-# Display the images
 fig, ax = plt.subplots(1, 3)
 fig.set_figheight(10)
 fig.set_figwidth(30)
 ax[0].imshow(np.array(img0) / 255.)
-ax[0].set_title('Content Image', fontsize=15)
+ax[0].set_title('Style Image', fontsize=15)
 ax[1].imshow(np.array(img1) / 255.)
-ax[1].set_title('Style Image', fontsize=15)
+ax[1].set_title('Content Image', fontsize=15)
 ax[2].imshow(result)
-ax[2].set_title('Transferred Image', fontsize=15)
+ax[2].set_title('Stylized Image', fontsize=15)
 plt.show()
-plt.savefig('output_image.png')
+if config.save:
+    plt.imsave(config.output_path, result)

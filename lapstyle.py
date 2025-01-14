@@ -26,9 +26,9 @@ def lapstyle_transfer_train(lossnet, input_image, style_grams, content_features,
             style_loss += F.mse_loss(a, b, reduction='sum') # 这是风格损失
         laplacian_loss = 0
         for gamma, p, cl in zip(config.laplacian_weight, config.laplacian_pool_size, content_laplacian):
-            laplacian_loss += F.mse_loss(cl, utils.laplacian(input_image, p), reduction='sum') * gamma
+            laplacian_loss += F.mse_loss(cl, utils.laplacian(input_image, p), reduction='sum')
 
-        loss = content_loss * config.content_weight + style_loss * config.style_weight + laplacian_loss
+        loss = content_loss * config.content_weight + style_loss * config.style_weight + laplacian_loss * config.laplacian_weight[0]
         loss.backward()
         optimizer.step()
 
@@ -53,8 +53,6 @@ style_features = lossnet(style_img)
 style_grams = [utils.gram_matrix(x) for x in style_features]
 content_laplacian = [utils.laplacian(content_img, p) for p in config.laplacian_pool_size]
 
-#input_img = torch.rand_like(content_img, dtype=torch.float32).cuda()
-#input_img = style_img.clone().cuda()
 input_img = content_img.clone().cuda()
 input_img.requires_grad = True
 
@@ -117,4 +115,4 @@ ax[2].imshow(result)
 ax[2].set_title('Stylized Image', fontsize=15)
 plt.show()
 if config.save:
-    plt.imsave(config.output_path, result.resize(img1.size()))
+    plt.imsave(config.output_path, result)
